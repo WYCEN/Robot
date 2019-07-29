@@ -38,7 +38,7 @@ sensor_msgs::JointState kinovaState;                //机械臂当前状态
 vector<int> targetsTag;                           	//需要抓取的目标物的标签
 bool getTargets=0;                                	//当接收到视觉定位结果时getTargets置1，执行完放置后置0
 bool getTargetsTag=0;                             	//当接收到需要抓取的目标物的标签时置1
-int poseChangeTimes=0;                              //当检测不到目标物体时,变换姿态重新检测的次数
+int poseChangeTimes=3;                              //当检测不到目标物体时,变换姿态重新检测的次数
 double minimumDistance = 0.3;                       //允许距离目标物的最小距离,单位米
 double servoCircle = 0.5;                           //伺服运动周期,单位秒
 
@@ -57,7 +57,7 @@ Eigen::Quaternionf hand2eye_q;
 string kinova_robot_type = "j2s7s300";
 string Finger_action_address = "/" + kinova_robot_type + "_driver/fingers_action/finger_positions";    //手指控制服务器的名称
 string base_frame = "base_link";// tf中基坐标系的名称
-string tool_frame = "j2s7s300_link_7";// tf中工具坐标系的名称
+string tool_frame = "j2s7s300_end_effector";// tf中工具坐标系的名称
 //手指client类型自定义
 typedef actionlib::SimpleActionClient<kinova_msgs::SetFingersPositionAction> Finger_actionlibClient;
 //定义手指控制client
@@ -84,7 +84,7 @@ void tagsCB(const rviz_teleop_commander::targets_tag &msg);
 bool fingerControl(double finger_turn);
 
 //机械臂运动控制函数
-void pickAndPlace(kinova_arm_moveit_demo::targetState curTargetPoint);
+void pickAndPlace(kinova_arm_moveit_demo::targetState curTargetPoint, const tf2_ros::Buffer& tfBuffer_);
 
 //抓取插值函数
 std::vector<geometry_msgs::Pose> pickInterpolate(geometry_msgs::Pose startPose,geometry_msgs::Pose targetPose);
@@ -100,6 +100,7 @@ void setStartPose3();
 void setStartPose4();
 
 //前往视觉识别初始位置
+void goStartJointPosition();
 void goStartPose();
 
 //获取机器人当前信息
@@ -193,7 +194,7 @@ bool fingerControl(double finger_turn)
   }
 }
 
-void pickAndPlace(kinova_arm_moveit_demo::targetState curTargetPoint)
+void pickAndPlace(kinova_arm_moveit_demo::targetState curTargetPoint,  const tf2_ros::Buffer& tfBuffer_)
 {
 //流程介绍
 //1--获得目标点并对路径进行插值
@@ -225,6 +226,15 @@ void pickAndPlace(kinova_arm_moveit_demo::targetState curTargetPoint)
   moveit::planning_interface::MoveGroupInterface::Plan pick_plan;
   moveit::planning_interface::MoveGroupInterface::Plan place_plan;
 
+  //**************key*******************************
+  curTargetPoint = transTarget(tfBuffer_, curTargetPoint);
+  //**************key*******************************
+
+  point.x = curTargetPoint.x;//获取抓取位姿
+  point.y = curTargetPoint.y;
+  point.z = highVal;
+
+  // 先写死抓取位姿，测试策略和精度后再调PCA,PCA计算放在transTarget函数中，这里的赋值待会儿要更正
   orientation.x = 1;//方向由视觉节点给定－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－Petori
   orientation.y = 0;
   orientation.z = 0;
@@ -233,6 +243,11 @@ void pickAndPlace(kinova_arm_moveit_demo::targetState curTargetPoint)
 
   targetPose.position = point;// 设置好目标位姿为可用的格式
   targetPose.orientation = orientation;
+
+  cout<<"targetPose.position: "<<endl;
+  cout<<targetPose.position.x<<","<<targetPose.position.y<<","<<targetPose.position.z<<endl;
+
+  sleep(60);
 
   //抓取插值
   std::vector<geometry_msgs::Pose> pickWayPoints;
@@ -341,15 +356,29 @@ std::vector<geometry_msgs::Pose> placeInterpolate(geometry_msgs::Pose startPose,
 
 void setPlacePose()
 {
-  placePose.position.x = -0.27;
-  placePose.position.y = 0.37;
-  placePose.position.z = 0.2;
-  placePose.orientation.x = 1;
-  placePose.orientation.y = 0;
+  placePose.position.x = -0.15;
+  placePose.position.y = -0.4;
+  placePose.position.z = 0.35;
+  placePose.orientation.x = 0;
+  placePose.orientation.y = 1;
   placePose.orientation.z = 0;
   placePose.orientation.w = 0;
 }
 
+void goStartJointPosition()
+{
+    moveit::planning_interface::MoveGroupInterface arm_group("arm");
+    std::vector< double > jointValues;
+    jointValues.push_back(-65.84/180*3.1415926);
+    jointValues.push_back(211.17/180*3.1415926);
+    jointValues.push_back(382.68/180*3.1415926);
+    jointValues.push_back(120.16/180*3.1415926);
+    jointValues.push_back(-10.39/180*3.1415926);
+    jointValues.push_back(274.44/180*3.1415926);
+    jointValues.push_back(2);
+    arm_group.setJointValueTarget(jointValues);
+    arm_group.move();
+}
 
 void goStartPose()
 {
@@ -378,56 +407,56 @@ void goStartPose()
 
 //void setStartPose1()
 //{
-//  startPose1.clear();
-//  startPose1.push_back(-2.33038);
-//  startPose1.push_back(2.42892);
-//  startPose1.push_back(3.49546);
-//  startPose1.push_back(1.81877);
-//  startPose1.push_back(2.89536);
-//  startPose1.push_back(1.97723);
-//  startPose1.push_back(-14.52231);
+//  startPose1.position.x = -0.297;
+//  startPose1.position.y = 0.43;
+//  startPose1.position.z = 0.25;
+//  startPose1.orientation.x = -0.988;
+//  startPose1.orientation.y =  0.156;
+//  startPose1.orientation.z = 0;
+//  startPose1.orientation.w = 0;
 //}
 
 void setStartPose1()
 {
-  startPose1.position.x = -0.297;
-  startPose1.position.y = 0.43;
-  startPose1.position.z = 0.25;
-  startPose1.orientation.x = -0.988;
-  startPose1.orientation.y =  0.156;
+  startPose1.position.x = -0.3;
+  startPose1.position.y = -0.25;
+  startPose1.position.z = 0.375;
+  startPose1.orientation.x = 0.216;
+  startPose1.orientation.y = 0.976;
   startPose1.orientation.z = 0;
   startPose1.orientation.w = 0;
 }
 
-void setStartPose2()
+
+void setStartPose2()//视场下沿靠近放置框边缘
 {
-  startPose2.position.x = -0.297;
-  startPose2.position.y = 0.43;
-  startPose2.position.z = 0.25;
-  startPose2.orientation.x = -0.988;
-  startPose2.orientation.y =  0.156;
-  startPose2.orientation.z = 0;
-  startPose2.orientation.w = 0;
+    startPose2.position.x = -0.35;
+    startPose2.position.y = -0.5;
+    startPose2.position.z = 0.375;
+    startPose2.orientation.x = 0.259;
+    startPose2.orientation.y = 0.966;
+    startPose2.orientation.z = 0;
+    startPose2.orientation.w = 0;
 }
-void setStartPose3()
+void setStartPose3()//视场下沿到右下沿边缘
 {
-  startPose3.position.x = -0.297;
-  startPose3.position.y = 0.43;
-  startPose3.position.z = 0.25;
-  startPose3.orientation.x = -0.988;
-  startPose3.orientation.y =  0.156;
-  startPose3.orientation.z = 0;
-  startPose3.orientation.w = 0;
+    startPose3.position.x = -0.35;
+    startPose3.position.y = -0.35;
+    startPose3.position.z = 0.375;
+    startPose3.orientation.x = 0.259;
+    startPose3.orientation.y = 0.966;
+    startPose3.orientation.z = 0;
+    startPose3.orientation.w = 0;
 }
-void setStartPose4()
+void setStartPose4()//视场下沿到上沿边缘
 {
-  startPose4.position.x = -0.297;
-  startPose4.position.y = 0.43;
-  startPose4.position.z = 0.25;
-  startPose4.orientation.x = -0.988;
-  startPose4.orientation.y =  0.156;
-  startPose4.orientation.z = 0;
-  startPose4.orientation.w = 0;
+    startPose4.position.x = -0.6;
+    startPose4.position.y = -0.4;
+    startPose4.position.z = 0.375;
+    startPose4.orientation.x = 0.259;
+    startPose4.orientation.y = 0.259;
+    startPose4.orientation.z = 0;
+    startPose4.orientation.w = 0;
 }
 
 void getRobotInfo(sensor_msgs::JointState curState)
@@ -715,6 +744,7 @@ kinova_arm_moveit_demo::targetState transTarget(const tf2_ros::Buffer& tfBuffer_
   kinova_arm_moveit_demo::targetState transResult;
   Eigen::Vector3f cam_center3f, base_center3f;
 
+
   cam_center3f(0)=targetNow.x;
   cam_center3f(1)=targetNow.y;
   cam_center3f(2)=targetNow.z;
@@ -808,8 +838,45 @@ int main(int argc, char **argv)
   setStartPose4();
   setPlacePose();
 
+  //goStartJointPosition();
   startPose = startPose1;
   goStartPose();
+  //sleep(60);
+//  //  测试完后可以删除
+//  //1、测试初始位置设置是否合理
+//  goStartJointPosition();
+//  sleep(1);
+//  startPose = startPose1;
+//  goStartPose();
+//  cout<<"ok now"<<endl;
+//  sleep(60);
+//  startPose = startPose2;
+//  goStartPose();
+//  sleep(2);
+//  startPose = startPose3;
+//  goStartPose();
+//  sleep(2);
+//  startPose = startPose4;
+//  goStartPose();
+//  sleep(2);
+
+
+//  //2、测试实物手爪控制
+//  fingerControl(0);
+//  sleep(1);
+//  fingerControl(1);
+//  sleep(1);
+//  fingerControl(0);
+
+//  //4、测试放置位置及能否看到放置框内物体
+//  startPose = placePose;
+//  goStartPose();
+//  sleep(2);
+
+//  //5、回到第一个识别位置
+//  startPose = startPose1;
+//  goStartPose();
+//  sleep(2);
 
 
   /*************************************/
@@ -829,9 +896,13 @@ int main(int argc, char **argv)
     }
   }
 
+  //sleep(60);
+
   /*************************************/
   /***********目标检测与抓取**************/
   /*************************************/
+
+  int counter = 0;//抓取成功的次数，注意一定不能多算
 
   while(ros::ok())
   {
@@ -840,13 +911,18 @@ int main(int argc, char **argv)
     kinova_arm_moveit_demo::targetState curTargetPoint;
 
     bool isExist = 0;                                   //是否存在
-    bool isHinder = 1;                                  //是否有遮挡
     int curTag = 0;                                     //当前抓取对象
-    int number=targetsTag.size();                       //目标个数
+    int number=targetsTag.size();                       //目标总个数
+
+    //int leftTargetNum = targets.size();
+
+    int loseNum = 0;//识别失败的个数
+    int trials = 0;
 
     for(int i=0;i<number;i++)
     {
       curTag = targetsTag[i];
+      trials++;
 
       //手抓闭合程度，抓取高度
       openVal=openVals[curTag-1];
@@ -858,57 +934,67 @@ int main(int argc, char **argv)
 
       while(!targetFinish)
       {
+        usleep(200000);
         isExist = judgeIsExist(curTag,targets);
+        if(!isExist)
+        {
+            loseNum++;
+        }
 
         int times = 0;
-        bool nextTarget = false;
-        while((!isExist)&&(times<(poseChangeTimes)))
-        {
-          ROS_INFO("There is no target [%d], change pose to detect again.", curTag);
-          if(times==0) {startPose = startPose2;goStartPose();}
-          if(times==1) {startPose = startPose3;goStartPose();}
-          if(times==2) {startPose = startPose4;goStartPose();}
-          if(times==poseChangeTimes)
-          {
-            ROS_INFO("Detection failed, go to pick the next target.");
-            startPose = startPose1;
-            goStartPose();
-            nextTarget = true;
-            break;
-          }
-          isExist = judgeIsExist(curTag,targets);
-          times++;
-        }
 
-        isHinder = judgeIsHinder(curTag,targets);
-        isHinder = false;
+        // 两种变换识别位姿的逻辑：
+        // (正在用2)
+        //1、主要依靠放置框中物体的识别准确率
+        //2、只要尝试次数等于目标抓取物体的个数就打算变换一次姿态试试
+
+        //if((loseNum+counter)==number)
+        if(trials==number)
+        {
+            while((!isExist)&&(times<(poseChangeTimes)))
+            {
+              ROS_INFO("There is no target [%d], change pose to detect again.", curTag);
+              if(times==0) {startPose = startPose2;goStartPose();}
+              if(times==1) {startPose = startPose3;goStartPose();}
+              if(times==2) {startPose = startPose4;goStartPose();}
+              if(times==poseChangeTimes)
+              {
+                ROS_INFO("Detection failed, go to pick the next target.");
+                startPose = startPose1;
+                goStartPose();
+                break;
+              }
+              isExist = judgeIsExist(curTag,targets);
+              times++;
+            }
+        }
 
         cout<<"isExist:"<<isExist<<endl;
-        cout<<"isHinder"<<isHinder<<endl;
 
-        while(isExist&&isHinder)//暂时不设置解决遮挡的次数
-        {
-          ROS_INFO("The target [%d] is blocked by others, try to pick up the obstacle.", curTag);
-          curTargetPoint = judgeTheObstacle(curTag,targets);
-          pickTheObstacle(curTargetPoint,tfBuffer);
-          placeTheObstacle(curTag,curTargetPoint,targets,tfBuffer);
-          goStartPose();
-          ROS_INFO("Try to detect the target [%d] again.", curTag);
-          isExist = 0;//存在位isExist置0,以跳出本循环和跳过下一个while循环
-        }
+//        while(isExist&&isHinder)//暂时不设置解决遮挡的次数
+//        {
+//          ROS_INFO("The target [%d] is blocked by others, try to pick up the obstacle.", curTag);
+//          curTargetPoint = judgeTheObstacle(curTag,targets);
+//          pickTheObstacle(curTargetPoint,tfBuffer);
+//          placeTheObstacle(curTag,curTargetPoint,targets,tfBuffer);
+//          goStartPose();
+//          ROS_INFO("Try to detect the target [%d] again.", curTag);
+//          isExist = 0;//存在位isExist置0,以跳出本循环和跳过下一个while循环
+//        }
 
-        while(isExist&&(!isHinder))
+        if(isExist)
         {
-          ROS_INFO("Got the unblocked target [%d].", curTag);
+          ROS_INFO("Got the target [%d].", curTag);
           curTargetPoint = getTargetPoint(curTag,targets);
 
-          pickAndPlace(curTargetPoint);
+          pickAndPlace(curTargetPoint,tfBuffer);
 
           //判断放置框中是否有目标物体
+          usleep(500000);
           isExist = judgeIsExist(curTag,targets);
           if(isExist)
           {
-            targetFinish = true;
+            counter++;
             ROS_INFO("Target [%d] succeeds.", curTag);
           }
 

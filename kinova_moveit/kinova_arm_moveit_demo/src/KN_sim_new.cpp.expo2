@@ -49,14 +49,16 @@ double servoCircle = 0.5;                           //伺服运动周期,单位�
 //手眼关系定义--赋值在main函数中
 Eigen::Matrix3f hand2eye_r;
 Eigen::Vector3f hand2eye_t;
-Eigen::Quaternionf hand2eye_q;
+Eigen::Quaterniond hand2eye_q;
 
 //-------------------------------------------------机器人相关------------------------------------------------
 //定义机器人类型
 string kinova_robot_type = "j2s7s300";
 string Finger_action_address = "/" + kinova_robot_type + "_driver/fingers_action/finger_positions";    //手指控制服务器的名称
-string base_frame = "j2s7s300_link_base";// tf中基坐标系的名称
+string base_frame = "base_link";// tf中基坐标系的名称
+string tool_frame = "wrist_3_link";// tf中工具坐标系的名称
 string camera_frame = "camera_color_optical_frame";// tf中相机坐标系的名称
+string world_frame = "world";// tf中世界坐标系的名称
 //手指client类型自定义
 typedef actionlib::SimpleActionClient<kinova_msgs::SetFingersPositionAction> Finger_actionlibClient;
 //定义手指控制client
@@ -211,10 +213,10 @@ void pickAndPlace(kinova_arm_moveit_demo::targetState curTargetPoint, const tf2_
   point.z = highVal;
 
 
-  orientation.x = curTargetPoint.qx;//方向由视觉节点给定－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－Petori
-  orientation.y = curTargetPoint.qy;
-  orientation.z = curTargetPoint.qz;
-  orientation.w = curTargetPoint.qw;
+    orientation.x = curTargetPoint.qx;//方向由视觉节点给定－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－Petori
+    orientation.y = curTargetPoint.qy;
+    orientation.z = curTargetPoint.qz;
+    orientation.w = curTargetPoint.qw;
 
 //    orientation.x = -0.988;
 //    orientation.y = 0.156;
@@ -493,7 +495,7 @@ void approachTarget(int tag, kinova_arm_moveit_demo::targetState targetNow, sens
 kinova_arm_moveit_demo::targetState transTarget(const tf2_ros::Buffer& tfBuffer_, kinova_arm_moveit_demo::targetState targetNow)
 {
   kinova_arm_moveit_demo::targetState transResult;
-  Eigen::Vector3f item_center3f;
+  Eigen::Vector3f item_center3f, base_center3f;
 
   item_center3f(0)=targetNow.x;
   item_center3f(1)=targetNow.y;
@@ -502,22 +504,22 @@ kinova_arm_moveit_demo::targetState transTarget(const tf2_ros::Buffer& tfBuffer_
   cout<<"targetNow: "<<endl;
   cout<<targetNow.x<<","<<targetNow.y<<","<<targetNow.z<<endl;
 
-  Eigen::Quaternionf quater(targetNow.qw,targetNow.qx,targetNow.qy,targetNow.qz);
+  Eigen::Quaterniond quater(targetNow.qw,targetNow.qx,targetNow.qy,targetNow.qz);
 
-  //用tf来计算base2hand--------------------------------------
+  //用tf来计算base2cam--------------------------------------
   Eigen::Matrix3f base2cam_r;
   Eigen::Vector3f base2cam_t;
   geometry_msgs::TransformStamped transformStamped;
   try
   {
-    transformStamped = tfBuffer_.lookupTransform(base_frame, camera_frame, ros::Time(0),ros::Duration(0.5));
+    transformStamped = tfBuffer_.lookupTransform(world_frame, camera_frame, ros::Time(0),ros::Duration(0.5));
   }
   catch (tf2::TransformException &ex)
   {
     ROS_WARN("%s",ex.what());
   }
 
-  Quaternionf rotQ(transformStamped.transform.rotation.w,
+  Quaterniond rotQ(transformStamped.transform.rotation.w,
                    transformStamped.transform.rotation.x,
                    transformStamped.transform.rotation.y,
                    transformStamped.transform.rotation.z);
@@ -526,6 +528,8 @@ kinova_arm_moveit_demo::targetState transTarget(const tf2_ros::Buffer& tfBuffer_
 
   cout<<"base2cam_r: "<<endl;
   cout<<base2cam_r<<endl;
+  sleep(60);
+
 
   base2cam_t<<transformStamped.transform.translation.x,
            transformStamped.transform.translation.y,
@@ -537,33 +541,38 @@ kinova_arm_moveit_demo::targetState transTarget(const tf2_ros::Buffer& tfBuffer_
   // 计算完毕-------------------------------------------------
 
   //目标物从工具坐标系转到基坐标系下
-  item_center3f=base2cam_r*item_center3f+base2cam_t;
-  quater=rotQ*quater;
+  base_center3f=base2cam_r*item_center3f+base2cam_t;
 
-  // pose adjustment
-  Eigen::Matrix3f adjustRot;
-  adjustRot = quater.toRotationMatrix();
-  Eigen::Vector3f xAxis;
-  Eigen::Vector3f yAxis;
-  Eigen::Vector3f zAxis;
+  //quater=rotQ*quater;
 
-  zAxis<<0,0,-1;
 
-  xAxis = adjustRot.col(0);
-  yAxis = zAxis.cross(xAxis);
-  xAxis = yAxis.cross(zAxis);
+//  //expo modefy the quater **************************************************************
+//  Quaterniond Q1(quater.x(),quater.y(),quater.z(),quater.w());
+//  Matrix3f R1 = Q1.matrix();
 
-  adjustRot<< xAxis(0),yAxis(0),zAxis(0),
-             xAxis(1),yAxis(1),zAxis(1),
-             xAxis(2),yAxis(2),zAxis(2);
+//  Eigen::Vector3f Q1x(R1(0,0),R1(1,0),R1(2,0));
+//  Eigen::Vector3f Q1y;
+//  Eigen::Vector3f Q1z(0,0,-1);
+//  Q1y = Q1z.cross(Q1x);
 
-  cout<<"adjustRot: "<<endl;
-  cout<<adjustRot<<endl;
+//  R1(0,0) = Q1x(0);
+//  R1(1,0) = Q1x(1);
+//  R1(2,0) = Q1x(2);
+//  R1(0,1) = Q1y(0);
+//  R1(1,1) = Q1y(1);
+//  R1(2,1) = Q1y(2);
+//  R1(0,2) = Q1z(0);
+//  R1(1,2) = Q1z(1);
+//  R1(2,2) = Q1z(2);
 
-  //sleep(60);
+//  cout<<"R1:"<<endl;
+//  cout<<R1<<endl;
 
-  quater = adjustRot;
+//  quater = R1;
 
+
+
+  //*************************expo modefy the quater **************************************************************
 
   //获取当前抓取物品的位置
   transResult.x=item_center3f(0);
@@ -575,6 +584,7 @@ kinova_arm_moveit_demo::targetState transTarget(const tf2_ros::Buffer& tfBuffer_
   transResult.qy=quater.y();
   transResult.qz=quater.z();
   transResult.qw=quater.w();
+  cout<<"transResult:"<<quater.x()<<quater.y()<<quater.z()<<quater.x()<<endl;
 
 //  ROS_INFO("curTargetPoint: %f %f %f",transResult.x,transResult.y,transResult.z);
 //  ROS_INFO("curTargetPose: %f %f %f %f",transResult.qx,transResult.qy,transResult.qz,transResult.qw);

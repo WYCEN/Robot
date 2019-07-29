@@ -24,7 +24,7 @@
 //关节位置信息
 #include <sensor_msgs/JointState.h>
 
-#define Simulation 1     //仿真为1，实物为0
+#define Simulation 0     //仿真为1，实物为0
 //#define UR5		//使用ur5
 
 //相机参数和深度信息用于计算
